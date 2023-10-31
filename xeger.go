@@ -91,6 +91,11 @@ func (x *Xeger) Generate() string {
 	return x.generateFromRegexp(x.re)
 }
 
+func (x *Xeger) GenerateRand(src Source) string {
+	y := Xeger{re: x.re, source: src, limit: x.limit}
+	return y.Generate()
+}
+
 // Generates strings which are matched with re.
 func (x *Xeger) generateFromRegexp(re *syntax.Regexp) string {
 	switch re.Op {
