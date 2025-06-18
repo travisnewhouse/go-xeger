@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/takahiromiyamoto/go-xeger"
+	"github.com/travisnewhouse/go-xeger"
 )
 
 func Test_Generate(t *testing.T) {

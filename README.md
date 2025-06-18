@@ -8,7 +8,7 @@ go-xeger is a golang module that generates random strings from a regular express
 To install go-xeger:
 
 ```bash
-$ go get github.com/takahiromiyamoto/go-xeger
+$ go get github.com/travisnewhouse/go-xeger
 ```
 
 ### Usage
@@ -19,7 +19,7 @@ package main
 import (
   "fmt"
 
-  "github.com/takahiromiyamoto/go-xeger"
+  "github.com/travisnewhouse/go-xeger"
 )
 
 func main() {
