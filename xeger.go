@@ -22,6 +22,13 @@ var src = rand.NewSource(time.Now().UnixNano())
 
 const limit = 10
 
+// A RandSource represents a source of uniformly-distributed pseudo-random
+// int64 values in the range [0, 1<<63).  This is a subset of interface
+// rand.RandSource to specify only the methods required by Xeger.
+type RandSource interface {
+	Int63() int64
+}
+
 type Xeger struct {
 	re *syntax.Regexp
 }
@@ -37,11 +44,17 @@ func NewXeger(regex string) (*Xeger, error) {
 }
 
 func (x *Xeger) Generate() string {
-	return x.generateFromRegexp(x.re)
+	return x.generateFromRegexp(x.re, src)
+}
+
+// GenerateWithSource returns a string that matches the regular expression with
+// which Xeger was created, using RandSource rng as a source of random numbers.
+func (x *Xeger) GenerateWithSource(rng RandSource) string {
+	return x.generateFromRegexp(x.re, rng)
 }
 
 // Generates strings which are matched with re.
-func (x *Xeger) generateFromRegexp(re *syntax.Regexp) string {
+func (x *Xeger) generateFromRegexp(re *syntax.Regexp, rng RandSource) string {
 	switch re.Op {
 	case syntax.OpLiteral: // matches Runes sequence
 		return string(re.Rune)
@@ -52,7 +65,7 @@ func (x *Xeger) generateFromRegexp(re *syntax.Regexp) string {
 			sum += 1 + int(re.Rune[i+1]-re.Rune[i])
 		}
 
-		index := rune(randInt(sum))
+		index := rune(randInt(rng, sum))
 		for i := 0; i < len(re.Rune); i += 2 {
 			delta := re.Rune[i+1] - re.Rune[i]
 			if index <= delta {
@@ -63,39 +76,39 @@ func (x *Xeger) generateFromRegexp(re *syntax.Regexp) string {
 		return ""
 
 	case syntax.OpAnyCharNotNL: // matches any character except newline
-		c := printableNotNL[randInt(len(printableNotNL))]
+		c := printableNotNL[randInt(rng, len(printableNotNL))]
 		return string([]byte{c})
 
 	case syntax.OpAnyChar: // matches any character
-		c := printable[randInt(len(printable))]
+		c := printable[randInt(rng, len(printable))]
 		return string([]byte{c})
 
 	case syntax.OpCapture: // capturing subexpression with index Cap, optional name Name
-		return x.generateFromSubexpression(re, 1)
+		return x.generateFromSubexpression(re, 1, rng)
 
 	case syntax.OpStar: // matches Sub[0] zero or more times
-		return x.generateFromSubexpression(re, randInt(limit+1))
+		return x.generateFromSubexpression(re, randInt(rng, limit+1), rng)
 
 	case syntax.OpPlus: // matches Sub[0] one or more times
-		return x.generateFromSubexpression(re, randInt(limit)+1)
+		return x.generateFromSubexpression(re, randInt(rng, limit)+1, rng)
 
 	case syntax.OpQuest: // matches Sub[0] zero or one times
-		return x.generateFromSubexpression(re, randInt(2))
+		return x.generateFromSubexpression(re, randInt(rng, 2), rng)
 
 	case syntax.OpRepeat: // matches Sub[0] at least Min times, at most Max (Max == -1 is no limit)
 		max := re.Max
 		if max == -1 {
 			max = limit
 		}
-		count := randInt(max-re.Min+1) + re.Min
-		return x.generateFromSubexpression(re, count)
+		count := randInt(rng, max-re.Min+1) + re.Min
+		return x.generateFromSubexpression(re, count, rng)
 
 	case syntax.OpConcat: // matches concatenation of Subs
-		return x.generateFromSubexpression(re, 1)
+		return x.generateFromSubexpression(re, 1, rng)
 
 	case syntax.OpAlternate: // matches alternation of Subs
-		i := randInt(len(re.Sub))
-		return x.generateFromRegexp(re.Sub[i])
+		i := randInt(rng, len(re.Sub))
+		return x.generateFromRegexp(re.Sub[i], rng)
 
 		/*
 			// The other cases return empty string.
@@ -115,11 +128,11 @@ func (x *Xeger) generateFromRegexp(re *syntax.Regexp) string {
 
 // Generates strings from all sub-expressions.
 // If count > 1, repeat to generate.
-func (x *Xeger) generateFromSubexpression(re *syntax.Regexp, count int) string {
+func (x *Xeger) generateFromSubexpression(re *syntax.Regexp, count int, rng RandSource) string {
 	b := make([]byte, 0, len(re.Sub)*count)
 	for i := 0; i < count; i++ {
 		for _, sub := range re.Sub {
-			b = append(b, x.generateFromRegexp(sub)...)
+			b = append(b, x.generateFromRegexp(sub, rng)...)
 		}
 	}
 	return string(b)
@@ -127,8 +140,8 @@ func (x *Xeger) generateFromSubexpression(re *syntax.Regexp, count int) string {
 
 // Returns a non-negative pseudo-random number in [0,n).
 // n must be > 0, but int31n does not check this; the caller must ensure it.
-// randInt is simpler and faster than rand.Intn(n), because xeger just
+// randInt is simpler and faster than rand.Intn(n), because xeger only
 // generates strings at random.
-func randInt(n int) int {
-	return int(src.Int63() % int64(n))
+func randInt(rng RandSource, n int) int {
+	return int(rng.Int63() % int64(n))
 }
