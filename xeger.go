@@ -18,9 +18,9 @@ const (
 	printableNotNL  = digits + ascii_letters + punctuation + control
 )
 
-var src = rand.NewSource(time.Now().UnixNano())
+var defaultSource = rand.NewSource(time.Now().UnixNano())
 
-const limit = 10
+const defaultLimit = 10
 
 // A RandSource represents a source of uniformly-distributed pseudo-random
 // int64 values in the range [0, 1<<63).  This is a subset of interface
@@ -30,21 +30,66 @@ type RandSource interface {
 }
 
 type Xeger struct {
-	re *syntax.Regexp
+	re    *syntax.Regexp
+	rng   RandSource
+	limit int
 }
 
-func NewXeger(regex string) (*Xeger, error) {
+func NewXeger(regex string, opts ...Option) (*Xeger, error) {
 	re, err := syntax.Parse(regex, syntax.Perl)
 	if err != nil {
 		return nil, err
 	}
+	x := &Xeger{re: re}
 
-	x := &Xeger{re}
+	for _, o := range opts {
+		o.apply(x)
+	}
+
+	// Set defaults
+	if x.rng == nil {
+		x.rng = defaultSource
+	}
+	if x.limit <= 0 {
+		x.limit = defaultLimit
+	}
+
 	return x, nil
 }
 
+// Option configures Xeger using the functional options paradigm.
+type Option interface {
+	apply(x *Xeger)
+}
+
+// optionFunc wraps a function to implement interface Option.
+type optionFunc func(x *Xeger)
+
+func (f optionFunc) apply(x *Xeger) {
+	f(x)
+}
+
+// WithSource returns an Option that configures a Xeger with the given Source
+// of random numbers.
+func WithSource(s RandSource) Option {
+	return optionFunc(func(x *Xeger) {
+		x.rng = s
+	})
+}
+
+// WithLimit returns an Option that configures a Zeger with the given limit for
+// the number of repeated subexpressions to generate (i.e., for "*" and "+"
+// operators in a regular expression).
+func WithLimit(limit int) Option {
+	return optionFunc(func(x *Xeger) {
+		x.limit = limit
+	})
+}
+
+// Generate returns a string that matches the regular expression with which
+// Xeger was created.
 func (x *Xeger) Generate() string {
-	return x.generateFromRegexp(x.re, src)
+	return x.generateFromRegexp(x.re, x.rng)
 }
 
 // GenerateWithSource returns a string that matches the regular expression with
@@ -87,10 +132,10 @@ func (x *Xeger) generateFromRegexp(re *syntax.Regexp, rng RandSource) string {
 		return x.generateFromSubexpression(re, 1, rng)
 
 	case syntax.OpStar: // matches Sub[0] zero or more times
-		return x.generateFromSubexpression(re, randInt(rng, limit+1), rng)
+		return x.generateFromSubexpression(re, randInt(rng, x.limit+1), rng)
 
 	case syntax.OpPlus: // matches Sub[0] one or more times
-		return x.generateFromSubexpression(re, randInt(rng, limit)+1, rng)
+		return x.generateFromSubexpression(re, randInt(rng, x.limit)+1, rng)
 
 	case syntax.OpQuest: // matches Sub[0] zero or one times
 		return x.generateFromSubexpression(re, randInt(rng, 2), rng)
@@ -98,7 +143,7 @@ func (x *Xeger) generateFromRegexp(re *syntax.Regexp, rng RandSource) string {
 	case syntax.OpRepeat: // matches Sub[0] at least Min times, at most Max (Max == -1 is no limit)
 		max := re.Max
 		if max == -1 {
-			max = limit
+			max = x.limit
 		}
 		count := randInt(rng, max-re.Min+1) + re.Min
 		return x.generateFromSubexpression(re, count, rng)
